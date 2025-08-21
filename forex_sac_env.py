@@ -36,22 +36,30 @@ class MultiTimeframeForexEnv(gym.Env):
         self.leverage = leverage
         self.max_lot = max_lot
 
-        # Load data for all timeframes
-        df15 = pd.read_parquet(data_15m_path)
-        df30 = pd.read_parquet(data_30m_path)
-        df1h = pd.read_parquet(data_1h_path)
-        df4h = pd.read_parquet(data_4h_path)
+        # Helper to load and normalize dataframe
+        def _load_df(path: str) -> pd.DataFrame:
+            df = pd.read_parquet(path)
+            # Use index as time column if one isn't present
+            if "time" not in df.columns:
+                idx_name = df.index.name or "index"
+                df = df.reset_index().rename(columns={idx_name: "time"})
+            df.columns = [c.lower() for c in df.columns]
+            return df
+
+        # Load data for all timeframes with consistent schema
+        df15 = _load_df(data_15m_path)
+        df30 = _load_df(data_30m_path)
+        df1h = _load_df(data_1h_path)
+        df4h = _load_df(data_4h_path)
 
         # Merge on timestamp column
-        for df in (df30, df1h, df4h):
-            if "time" not in df.columns:
-                raise ValueError("Dataframes must contain a 'time' column")
         merged = (
             df15
             .merge(df30, on="time", suffixes=("_15m", "_30m"))
             .merge(df1h, on="time", suffixes=("", "_1h"))
             .merge(df4h, on="time", suffixes=("", "_4h"))
             .sort_values("time")
+            .dropna()
             .reset_index(drop=True)
         )
 
